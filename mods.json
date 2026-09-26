@@ -1,0 +1,44 @@
+{
+  "format": "atlas-mod-list",
+  "version": 1,
+  "output_dir": "assets/mods",
+  "manifest": "assets/mods/chess_manifest.json",
+  "mods": [
+    {
+      "output": "chess_opponent.wasm",
+      "sources": [
+        "mod/freestanding.c",
+        "mod/rules.c",
+        "mod/opponent.c"
+      ],
+      "inputs": [
+        "mod/rules.h",
+        "sim/include/atlas/chess/mod_view.h"
+      ],
+      "include_dirs": [
+        "sim/include",
+        "mod"
+      ],
+      "initial_memory": 131072,
+      "max_memory": 1048576,
+      "stack_size": 32768,
+      "play": {
+        "args": [
+          "--headless",
+          "--mod",
+          "{module}",
+          "--mod-plays",
+          "both",
+          "--mods-dir",
+          "{mods_dir}"
+        ],
+        "compare": [
+          "^position:.*$",
+          "^result:.*$",
+          "^state hash:.*$",
+          "^chess:.*$"
+        ]
+      }
+    }
+  ]
+}

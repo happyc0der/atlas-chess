@@ -1,0 +1,189 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+# Each lane builds the Atlas SDK at the commit atlas.ref pins, from atlas-engine's own sources,
+# then builds chess against the install and nothing else, and runs every test. The SDK is cached
+# per commit and preset, so only a moved pin rebuilds it. Runner labels are pinned, as
+# atlas-engine's are.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64 Debug
+            os: macos-26
+            preset: macos-debug
+            triplet: arm64-osx
+          - name: Linux x86_64 Clang Debug
+            os: ubuntu-24.04
+            preset: linux-clang-debug
+            triplet: x64-linux
+          - name: Linux x86_64 Clang Release
+            os: ubuntu-24.04
+            preset: linux-clang-release
+            triplet: x64-linux
+          - name: Windows x64 MSVC Debug
+            os: windows-2025
+            preset: windows-msvc-debug
+            triplet: x64-windows
+
+    # CMake runs in each platform's own shell, as in atlas-engine: under Git Bash on Windows, its
+    # own `link` can shadow MSVC's. Steps that need bash say so.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: chess
+
+      # One `python` on every runner; Windows images do not reliably have `python3`.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read the pinned engine
+        shell: bash
+        run: echo "ATLAS_REF=$(tr -d '[:space:]' < chess/atlas.ref)" >> "$GITHUB_ENV"
+
+      # Full history for the engine and its vcpkg submodule: vcpkg resolves a pinned port version
+      # from its own git history, which a shallow clone does not contain.
+      - uses: actions/checkout@v4
+        with:
+          repository: happyc0der/atlas-engine
+          ref: ${{ env.ATLAS_REF }}
+          path: atlas
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Linux prerequisites
+        if: runner.os == 'Linux'
+        run: bash atlas/tools/ci/linux_deps.sh
+
+      # The toolchain the opponent is built with (atlas-engine ADR-0023), so the test
+      # chess_mods_built_current rebuilds it and plays it against the committed module. Linux
+      # only, as in atlas-engine.
+      - name: Install the mod toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends wget gnupg ca-certificates
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] \
+            http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm23.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-23 lld-23
+
+      - name: Install macOS prerequisites
+        if: runner.os == 'macOS'
+        run: brew install ninja pkgconf
+
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --no-progress --yes
+
+      # The SDK: the engine's install prefix and the vcpkg tree it was built with. Both are used
+      # where they are and never copied, so they are cached where they are.
+      - name: Cache the Atlas SDK
+        id: sdk
+        uses: actions/cache@v4
+        with:
+          path: |
+            atlas/build/${{ matrix.preset }}/install
+            atlas/build/${{ matrix.preset }}/vcpkg_installed
+          key: atlas-sdk-${{ matrix.preset }}-${{ env.ATLAS_REF }}
+
+      - name: Cache vcpkg binaries
+        if: steps.sdk.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: atlas/.cache/vcpkg-archives
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('atlas/vcpkg.json', 'atlas/.gitmodules', 'atlas/external/vcpkg-overlays/**') }}
+          restore-keys: vcpkg-${{ matrix.triplet }}-
+
+      - name: Bootstrap vcpkg (Unix)
+        if: steps.sdk.outputs.cache-hit != 'true' && runner.os != 'Windows'
+        working-directory: atlas
+        run: ./external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Bootstrap vcpkg (Windows)
+        if: steps.sdk.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        working-directory: atlas
+        run: .\external\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Build the Atlas SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        working-directory: atlas
+        run: |
+          cmake --preset ${{ matrix.preset }} -DATLAS_BUILD_TESTS=OFF
+          cmake --build --preset ${{ matrix.preset }}
+          python tools/sdk.py ${{ matrix.preset }}
+
+      # Named from the layout rather than from sdk.py's output, so a cached SDK needs no engine
+      # build directory beyond the two it is. Forward slashes, which CMake reads on every system.
+      - name: Point at the SDK
+        shell: bash
+        run: |
+          python - <<'EOF' >> "$GITHUB_ENV"
+          import os, pathlib
+          build = pathlib.Path(os.environ["GITHUB_WORKSPACE"], "atlas", "build",
+                               "${{ matrix.preset }}")
+          print(f"ATLAS_PREFIX={(build / 'install').as_posix()}")
+          print(f"ATLAS_DEPS={(build / 'vcpkg_installed' / '${{ matrix.triplet }}').as_posix()}")
+          EOF
+
+      - name: Configure
+        working-directory: chess
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        working-directory: chess
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        working-directory: chess
+        run: ctest --preset ${{ matrix.preset }}
+
+      # The binary names the engine commit it was compiled against, which must be the pin.
+      - name: Built against the pinned engine
+        working-directory: chess
+        shell: bash
+        run: |
+          version="$(./build/${{ matrix.preset }}/bin/atlas_chess --version)"
+          echo "$version"
+          [[ "$version" == *"(${ATLAS_REF:0:12})"* ]] \
+            || { echo "expected atlas-engine ${ATLAS_REF:0:12}"; exit 1; }
+
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format 23
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] \
+            http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm23.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-format-23
+      - name: C and C++ are formatted
+        run: git ls-files '*.c' '*.h' '*.cpp' '*.hpp' | xargs clang-format-23 --dry-run --Werror
