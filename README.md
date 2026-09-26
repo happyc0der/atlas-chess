@@ -73,6 +73,8 @@ they do not. `sdk.py` prints the rules for the SDK it installed.
 | `mods.json` | the mod list for Atlas's `build_mods.py` |
 | `atlas.ref` | the atlas-engine commit this is built against |
 
+What is consciously not built, and why, is in [DEFERRED.md](DEFERRED.md).
+
 **References to ADRs and milestones** (ADR-0018, M26 and so on) in comments and here are
 atlas-engine's, under its `docs/adr/` and `docs/reports/`.
 
