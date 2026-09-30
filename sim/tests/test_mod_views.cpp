@@ -30,8 +30,9 @@ TEST_CASE("the position view puts every field where mod_view.h says", "[chess][v
     CHECK(view[ATLAS_CHESS_VIEW_EN_PASSANT] == 4);
     CHECK(view[ATLAS_CHESS_VIEW_HALFMOVE] == 70);
     CHECK(view[ATLAS_CHESS_VIEW_HALFMOVE + 1] == 0);
-    CHECK(view[ATLAS_CHESS_VIEW_FULLMOVE] == (300 & 0xFF));
-    CHECK(view[ATLAS_CHESS_VIEW_FULLMOVE + 1] == (300 >> 8));
+    // Move 300 is 0x012C, written low byte first.
+    CHECK(view[ATLAS_CHESS_VIEW_FULLMOVE] == 0x2C);
+    CHECK(view[ATLAS_CHESS_VIEW_FULLMOVE + 1] == 0x01);
     CHECK(view[ATLAS_CHESS_VIEW_OUTCOME] == 0);
 }
 

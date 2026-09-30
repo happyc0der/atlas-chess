@@ -22,6 +22,7 @@ ctest --preset macos-debug                     # everything
 ctest --preset macos-debug -L integration      # the whole program only
 python3 tools/gen_chess_textures.py            # after changing the piece drawing
 python3 "$ATLAS_PREFIX/share/atlas/tools/build_mods.py" --mods mods.json   # after changing mod/*.c
+tools/tidy.sh macos-debug                      # clang-tidy over the C++, as CI runs it
 ```
 
 ## Moving the pin

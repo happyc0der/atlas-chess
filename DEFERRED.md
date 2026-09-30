@@ -52,8 +52,16 @@ one is made here.
 - **Sanitizer lanes.** A sanitizer build of Atlas refuses to install (ADR-0024 D7), and a
   sanitized chess over an uninstrumented engine would report only half of anything. Trigger: a
   race or a memory error suspected in chess itself.
-- **clang-tidy.** The configuration is copied and nothing runs it; formatting is checked. Trigger:
-  the first change larger than a pin move.
+- ~~**clang-tidy.**~~ **Runs since M32**, by the trigger this entry named: the first change larger
+  than a pin move. `tools/tidy.sh` and a CI job analyse the C++ with clang-tidy 23. The copied
+  configuration's header filter named the engine's headers, so no chess header had ever been
+  analysed; it now names chess's own. The first run found five things: one in a header, four in
+  tests, all fixed. The original text follows. The configuration is copied and nothing runs it;
+  formatting is checked.
+- **The opponent's C is not analysed**: `mod/*.c`, `mod/rules.h` and
+  `sim/include/atlas/chess/mod_view.h`. It is freestanding C compiled to WebAssembly, and
+  atlas-engine does not analyse its own mods either; the rules are checked by perft and against
+  `chess_sim` instead. Trigger: a bug in the opponent that analysis would have found.
 - **A relocatable data path.** The engine's shaders and strings are found by an absolute path baked
   in at configure, so a binary works only beside the SDK it was built against. Trigger: shipping
   a binary to another machine.

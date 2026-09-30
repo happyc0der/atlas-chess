@@ -31,7 +31,7 @@
 
 namespace atlas::chess {
 
-inline const sim::CommandType kMoveCommand = sim::command_type("chess.move");
+inline constexpr sim::CommandType kMoveCommand = sim::command_type("chess.move");
 inline constexpr std::size_t kMoveCommandBytes = 3;
 
 /// A move as a payload, and back. `decode_move` checks the squares are on the board, the

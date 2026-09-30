@@ -1,4 +1,5 @@
-# Atlas static analysis.
+# Chess static analysis: atlas-engine's .clang-tidy, copied at M27, with this repository's
+# header filter since M32.
 #
 # The check list is curated rather than a wholesale "*": several upstream checks contradict
 # the rules in CLAUDE.md or fire constantly on correct code, and a linter nobody can keep
@@ -89,7 +90,10 @@ Checks: >
 #                                         arbiter; the convention is.
 
 WarningsAsErrors: '*'
-HeaderFilterRegex: 'engine/.*/include/atlas/.*\.hpp$'
+# Chess's own headers, and nothing else (M32). Copied from atlas-engine, this named the engine's
+# headers, which chess reaches only through the SDK and does not analyse; it matched no chess header
+# at all, and would also have matched an SDK installed under a path containing engine/.
+HeaderFilterRegex: '(sim|view)/include/atlas/chess/[^/]*\.hpp$|src/chess_[^/]*\.hpp$'
 FormatStyle: file
 
 CheckOptions:

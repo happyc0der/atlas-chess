@@ -128,7 +128,8 @@ TEST_CASE("validation sees what no single table can", "[chess][world]") {
     SECTION("a castling right after the rook has gone") {
         board.put(square(7, 0), Piece::None);
         CHECK_FALSE(validate_world(h.world(), h.ids()).has_value());
-        state.castling = static_cast<std::uint8_t>(state.castling & ~atlas::chess::kWhiteKingSide);
+        state.castling =
+            static_cast<std::uint8_t>(state.castling & (0xFFU ^ atlas::chess::kWhiteKingSide));
         CHECK(validate_world(h.world(), h.ids()).has_value());
     }
     SECTION("an en passant file with no pawn behind it") {

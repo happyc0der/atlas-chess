@@ -1,0 +1,49 @@
+# Chess static analysis, for tests.
+#
+# A copy of atlas-engine's tools/clang-tidy-tests.yml (M32), keeping only the entries whose reasons
+# hold here. Same checks as the repository root, which this inherits, minus the ones a testing
+# framework makes meaningless; nothing here relaxes a check because fixing it would be tedious.
+# The engine's copy also switches off checks for code chess does not have — a replaced global
+# operator new, a vendored image writer, platform flag headers — and those stay on here until a
+# finding says otherwise.
+#
+# Applied by tools/tidy.sh as a second pass over sim/tests, view/tests and mod/tests.
+---
+InheritParentConfig: true
+
+# The root's filter admits chess's own public headers only; a header that exists only for tests,
+# such as sim/tests/chess_harness.hpp, joins them here.
+HeaderFilterRegex: '((sim|view)/include/atlas/chess/[^/]*|src/chess_[^/]*|(sim|view|mod)/tests/[^/]*)\.hpp$'
+
+Checks: >
+  -bugprone-unchecked-optional-access,
+  -bugprone-use-after-move,
+  -bugprone-throwing-static-initialization,
+  -clang-analyzer-cplusplus.Move
+
+# Rationale, one per entry, as in atlas-engine:
+#
+#   bugprone-unchecked-optional-access — Catch2's REQUIRE aborts the test when it fails, so
+#       `REQUIRE(x.has_value()); x->f();` is guarded. The check's dataflow analysis cannot see
+#       through the macro and reports every access after one.
+#
+#   bugprone-use-after-move, clang-analyzer-cplusplus.Move — `REQUIRE(f(std::move(x)))` moves x
+#       once, but Catch2's expression decomposition mentions the expression twice in its
+#       expansion, so the checks see a second use that never runs.
+#
+#   bugprone-throwing-static-initialization — a TEST_CASE is a static registration object by
+#       construction. That is how the framework works, and not a choice the test made.
+
+CheckOptions:
+  # `(void)` marks a result discarded on purpose; with this set, a discarded result nobody marked
+  # is still reported.
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: 'true'
+
+  # The k prefix makes a constant recognisable far from its definition. A test fixture is defined
+  # three lines above its use, where `kRect` reads worse than `rect`. Type, member, function and
+  # namespace naming are still enforced.
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: aNy_CasE
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: ''

@@ -4,7 +4,7 @@ name: CI
 # Each lane builds the Atlas SDK at the commit atlas.ref pins, from atlas-engine's own sources,
 # then builds chess against the install and nothing else, and runs every test. The SDK is cached
 # per commit and preset, so only a moved pin rebuilds it. Runner labels are pinned, as
-# atlas-engine's are.
+# atlas-engine's are. Formatting and clang-tidy run as jobs of their own.
 on:
   push:
     branches: [main]
@@ -187,3 +187,70 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang-format-23
       - name: C and C++ are formatted
         run: git ls-files '*.c' '*.h' '*.cpp' '*.hpp' | xargs clang-format-23 --dry-run --Werror
+
+  # clang-tidy 23 over chess's C++ (M32), with the compile commands of the Linux Debug
+  # configuration. Configuring needs the SDK, and this takes the one the Linux Debug lane built and
+  # cached for the pin rather than building a second, so it runs after the lanes. The cache's path
+  # lines must be the lane's exactly: they are part of the cache's identity.
+  tidy:
+    name: clang-tidy
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: chess
+
+      - name: Read the pinned engine
+        run: echo "ATLAS_REF=$(tr -d '[:space:]' < chess/atlas.ref)" >> "$GITHUB_ENV"
+
+      # Only the engine's CI scripts, for its list of Linux prerequisites.
+      - uses: actions/checkout@v4
+        with:
+          repository: happyc0der/atlas-engine
+          ref: ${{ env.ATLAS_REF }}
+          path: atlas
+          sparse-checkout: tools/ci
+
+      - name: Install Linux prerequisites
+        run: bash atlas/tools/ci/linux_deps.sh
+
+      # The version the development machine runs; atlas-engine found that clang-tidy 19 and 23
+      # disagree often enough to keep neither green.
+      - name: Install clang-tidy 23
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] \
+            http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm23.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-tidy-23
+          clang-tidy-23 --version
+
+      - name: Restore the Atlas SDK
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            atlas/build/linux-clang-debug/install
+            atlas/build/linux-clang-debug/vcpkg_installed
+          key: atlas-sdk-linux-clang-debug-${{ env.ATLAS_REF }}
+          fail-on-cache-miss: true
+
+      - name: Point at the SDK
+        run: |
+          sdk="${GITHUB_WORKSPACE}/atlas/build/linux-clang-debug"
+          echo "ATLAS_PREFIX=${sdk}/install" >> "$GITHUB_ENV"
+          echo "ATLAS_DEPS=${sdk}/vcpkg_installed/x64-linux" >> "$GITHUB_ENV"
+
+      # Configured, not built: clang-tidy needs the compile commands and nothing else.
+      - name: Configure
+        working-directory: chess
+        run: cmake --preset linux-clang-debug
+
+      - name: Run clang-tidy
+        working-directory: chess
+        env:
+          ATLAS_CLANG_TIDY: /usr/bin/clang-tidy-23
+        run: ./tools/tidy.sh linux-clang-debug

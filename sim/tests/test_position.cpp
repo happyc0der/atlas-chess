@@ -94,8 +94,8 @@ TEST_CASE("castling moves the rook, spends the rights, and is refused through ch
     CHECK(short_castled.at(square(6, 0)) == Piece::WhiteKing);
     CHECK(short_castled.at(square(5, 0)) == Piece::WhiteRook);
     CHECK(short_castled.at(square(7, 0)) == Piece::None);
-    CHECK((short_castled.castling &
-           (atlas::chess::kWhiteKingSide | atlas::chess::kWhiteQueenSide)) == 0);
+    const std::uint8_t white_rights = atlas::chess::kWhiteKingSide | atlas::chess::kWhiteQueenSide;
+    CHECK((short_castled.castling & white_rights) == 0);
     CHECK((short_castled.castling & atlas::chess::kBlackKingSide) != 0);
 
     const Position long_castled = ready.after(mv("e1c1"));
